@@ -1,0 +1,87 @@
+var serialport = require("serialport");
+var portName = "COM3"; // check your COM port!!
+var port = process.env.PORT || 3000;
+
+var io = require("socket.io").listen(port);
+
+const Readline = require("@serialport/parser-readline");
+// serial port object
+var sp = new serialport(portName, {
+  baudRate: 9600, // 9600  38400
+  dataBits: 8,
+  parity: "none",
+  stopBits: 1,
+  flowControl: false,
+  parser: new Readline("\r\n"),
+});
+
+const parser = sp.pipe(new Readline({ delimiter: "\r\n" }));
+
+// Read the port data
+sp.on("open", () => {
+  console.log("serial port open");
+});
+
+var dStr = "";
+var readData = "";
+var temp = "";
+var humi = "";
+var lux = "";
+var mdata = [];
+var firstcommaidx = 0;
+var secondcommaidx = 0;
+
+parser.on("data", (data) => {
+  // call back when data is received
+  readData = data.toString();
+  firstcommaidx = readData.indexOf(",");
+  secondcommaidx = readData.indexOf(",", firstcommaidx + 1);
+  if (readData.lastIndexOf(",") > firstcommaidx && firstcommaidx > 0) {
+    temp = readData.substring(
+      firstcommaidx + 1,
+      readData.indexOf(",", firstcommaidx + 1)
+    );
+    humi = readData.substring(
+      secondcommaidx + 1,
+      readData.indexOf(",", secondcommaidx + 1)
+    );
+    lux = readData.substring(readData.lastIndexOf(",") + 1);
+    name = readData.substring(0, firstcommaidx);
+    readData = "";
+
+    dStr = getDateString();
+    mdata[0] = dStr; //date
+    mdata[1] = temp; //data
+    mdata[2] = humi;
+    mdata[3] = lux;
+    mdata[4] = name;
+    console.log("AA0914 " + mdata);
+    io.sockets.emit("message", mdata); // send data to all clients
+  } else {
+    console.log(readData);
+  }
+});
+
+io.sockets.on("connection", function (socket) {
+  // If socket.io receives message from the client browser then
+  // this call back will be executed.
+  socket.on("message", function (msg) {
+    console.log(msg);
+  });
+  // If a web browser disconnects from Socket.IO then this callback is called.
+  socket.on("disconnect", function () {
+    console.log("disconnected");
+  });
+});
+
+// helper function to get a nicely formatted date string for IOT
+function getDateString() {
+  var time = new Date().getTime();
+  // 32400000 is (GMT+9 Korea, GimHae)
+  // for your timezone just multiply +/-GMT by 3600000
+  var datestr = new Date(time + 32400000)
+    .toISOString()
+    .replace(/T/, " ")
+    .replace(/Z/, "");
+  return datestr;
+}
